@@ -10,7 +10,7 @@ import {
   Alert,
   Share,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { petsAPI } from '../../utils/api';
@@ -25,6 +25,13 @@ export default function PetDetails() {
   useEffect(() => {
     loadPetDetails();
   }, [id]);
+
+  // Reload data when screen comes back into focus (after reporting a sighting)
+  useFocusEffect(
+    React.useCallback(() => {
+      if (id) loadPetDetails();
+    }, [id])
+  );
 
   const loadPetDetails = async () => {
     try {

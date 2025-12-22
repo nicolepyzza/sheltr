@@ -97,6 +97,7 @@ router.post(
 
       const {
         type,
+        petType,
         description,
         breeds,
         colors,
@@ -121,6 +122,7 @@ router.post(
       const pet = new Pet({
         userId: req.user._id,
         type,
+        petType: petType || 'other',
         imageUrl,
         description,
         breeds: parsedBreeds,

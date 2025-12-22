@@ -11,6 +11,11 @@ const petSchema = new mongoose.Schema({
     enum: ['lost', 'stray'],
     required: true
   },
+  petType: {
+    type: String,
+    enum: ['dog', 'cat', 'other'],
+    default: 'other'
+  },
   imageUrl: {
     type: String,
     default: null

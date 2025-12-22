@@ -127,9 +127,7 @@ GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
 
 **Important:** For iOS simulator, use `http://localhost:3000`. For Android emulator, use `http://10.0.2.2:3000`. For physical devices, use your computer's IP address (e.g., `http://192.168.1.100:3000`).
 
-Edit `frontend/app.json` and replace `YOUR_GOOGLE_MAPS_API_KEY` with your actual Google Maps API key in two places:
-- Line 20: `ios.config.googleMapsApiKey`
-- Line 31: `android.config.googleMaps.apiKey`
+**Note:** The `.env` file is gitignored and won't be committed. For production builds, you'll set environment variables in EAS Build secrets (covered in deployment section).
 
 Start the frontend:
 ```bash
@@ -196,17 +194,22 @@ npm run android
    eas build:configure
    ```
 
-4. Build for iOS:
+4. Add your API keys as secrets (best practice - not committed to git):
+   ```bash
+   eas secret:create --scope project --name GOOGLE_MAPS_API_KEY --value your_actual_key_here
+   ```
+
+5. Build for iOS:
    ```bash
    eas build --platform ios
    ```
 
-5. Build for Android:
+6. Build for Android:
    ```bash
    eas build --platform android
    ```
 
-6. Submit to stores:
+7. Submit to stores:
    ```bash
    eas submit --platform ios
    eas submit --platform android
@@ -258,6 +261,28 @@ npm run android
 - ✅ Pull-to-refresh
 
 ## Troubleshooting
+
+### "PlatformConstants could not be found" or TurboModule errors
+This happens when native modules aren't properly initialized. Fix with:
+
+```bash
+# In frontend folder
+# 1. Clear cache and reinstall
+rm -rf node_modules
+npm install
+
+# 2. Clear Expo cache
+npx expo start -c
+
+# 3. For iOS (Mac only), reinstall pods
+cd ios && pod install && cd ..
+
+# 4. If still not working, try:
+watchman watch-del-all
+rm -rf $TMPDIR/metro-*
+```
+
+Then restart the app with `npm start` and press `i` for iOS or `a` for Android.
 
 ### Backend won't start
 - Check MongoDB connection string is correct

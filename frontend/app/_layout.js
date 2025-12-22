@@ -1,7 +1,19 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider } from '../context/AuthContext';
 
+// Prevent the splash screen from auto-hiding
+SplashScreen.preventAutoHideAsync();
+
 export default function RootLayout() {
+  useEffect(() => {
+    // Hide splash screen after a short delay to let fonts load
+    setTimeout(() => {
+      SplashScreen.hideAsync();
+    }, 100);
+  }, []);
+
   return (
     <AuthProvider>
       <Stack
