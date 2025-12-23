@@ -13,6 +13,9 @@ import AddressAutocomplete from './AddressAutocomplete';
 export default function ReportModal({ visible, onClose, onSubmit }) {
   const [type, setType] = useState('lost');
   const [petType, setPetType] = useState('dog');
+  const [petName, setPetName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [microchipNumber, setMicrochipNumber] = useState('');
   const [image, setImage] = useState(null);
   const [description, setDescription] = useState('');
   const [breedInput, setBreedInput] = useState('');
@@ -152,6 +155,13 @@ export default function ReportModal({ visible, onClose, onSubmit }) {
     if (!address.trim()) return Alert.alert('Error', 'Please provide an address');
     if (!useCurrentTime && !customTime.trim()) return Alert.alert('Error', 'Please specify a time or use current time');
     if (!useCurrentTime && !/^\d{2}:\d{2}$/.test(customTime)) return Alert.alert('Error', 'Time must be in HH:MM format (e.g., 14:30)');
+    
+    // Additional validation for lost pets
+    if (type === 'lost') {
+      if (!petName.trim()) return Alert.alert('Error', 'Pet name is required for lost pets');
+      if (!image) return Alert.alert('Error', 'Photo is required for lost pets');
+      if (breeds.length === 0) return Alert.alert('Error', 'At least one breed is required for lost pets');
+    }
 
     try {
       setLoading(true);
@@ -163,6 +173,9 @@ export default function ReportModal({ visible, onClose, onSubmit }) {
         address: address.trim(),
         initialTime: useCurrentTime ? new Date().toISOString() : customTime,
       };
+      if (petName) petData.petName = petName.trim();
+      if (contactPhone) petData.contactPhone = contactPhone.trim();
+      if (microchipNumber) petData.microchipNumber = microchipNumber.trim();
       if (image) petData.image = image;
       await petsAPI.create(petData);
       Alert.alert('Success', 'Pet report submitted successfully!');
@@ -176,7 +189,8 @@ export default function ReportModal({ visible, onClose, onSubmit }) {
   };
 
   const resetForm = () => {
-    setType('lost'); setPetType('dog'); setImage(null); setDescription('');
+    setType('lost'); setPetType('dog'); setPetName(''); setContactPhone(''); setMicrochipNumber('');
+    setImage(null); setDescription('');
     setBreedInput(''); setBreeds([]); setColorInput(''); setColors([]);
     setBehaviorInput(''); setBehaviors([]); setAddress('');
     setUseCurrentTime(true); setCustomTime('');
@@ -223,7 +237,40 @@ export default function ReportModal({ visible, onClose, onSubmit }) {
             ))}
           </View>
 
-          <Text style={styles.label}>Photo (Optional)</Text>
+          {type === 'lost' && (
+            <>
+              <Text style={styles.label}>Pet's Name *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="What's your pet's name?"
+                value={petName}
+                onChangeText={setPetName}
+                autoCapitalize="words"
+              />
+
+              <Text style={styles.label}>Your Phone Number</Text>
+              <Text style={styles.helperText}>Private - only shown to you</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="(555) 123-4567"
+                value={contactPhone}
+                onChangeText={setContactPhone}
+                keyboardType="phone-pad"
+              />
+
+              <Text style={styles.label}>Microchip Number</Text>
+              <Text style={styles.helperText}>Always kept private</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Optional"
+                value={microchipNumber}
+                onChangeText={setMicrochipNumber}
+                autoCapitalize="characters"
+              />
+            </>
+          )}
+
+          <Text style={styles.label}>{type === 'lost' ? 'Photo *' : 'Photo (Optional)'}</Text>
           <View style={styles.imageContainer}>
             {image ? (
               <View style={styles.imagePreview}>
@@ -249,7 +296,7 @@ export default function ReportModal({ visible, onClose, onSubmit }) {
           <Text style={styles.label}>Description *</Text>
           <TextInput style={styles.textArea} placeholder="Describe the pet..." value={description} onChangeText={setDescription} multiline numberOfLines={4} maxLength={1000} />
 
-          <Text style={styles.label}>Breed(s)</Text>
+          <Text style={styles.label}>{type === 'lost' ? 'Breed(s) *' : 'Breed(s)'}</Text>
           <View style={styles.tagInputContainer}>
             <TextInput style={styles.tagInput} placeholder="Start typing..." value={breedInput} onChangeText={setBreedInput} onSubmitEditing={() => addBreed(breedInput)} />
             <TouchableOpacity style={styles.addButton} onPress={() => addBreed(breedInput)}>
@@ -340,6 +387,7 @@ const styles = StyleSheet.create({
   content: { flex: 1, padding: 20 },
   label: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 8, marginTop: 15 },
   helpText: { fontSize: 12, color: '#999', marginBottom: 5 },
+  helperText: { fontSize: 12, color: '#999', fontStyle: 'italic', marginTop: -4, marginBottom: 8 },
   typeContainer: { flexDirection: 'row', gap: 10 },
   typeButton: { flex: 1, padding: 15, borderRadius: 10, borderWidth: 2, borderColor: '#ddd', alignItems: 'center' },
   petTypeButton: { flex: 1, padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#ddd', alignItems: 'center' },

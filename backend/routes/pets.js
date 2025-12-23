@@ -98,6 +98,9 @@ router.post(
       const {
         type,
         petType,
+        petName,
+        contactPhone,
+        microchipNumber,
         description,
         breeds,
         colors,
@@ -107,6 +110,13 @@ router.post(
         address,
         initialTime,
       } = req.body;
+
+      // Additional validation for lost pets (owner reporting)
+      if (type === 'lost') {
+        if (!petName || !req.file || !breeds) {
+          return res.status(400).json({ message: 'Lost pets require name, photo, and breed(s)' });
+        }
+      }
 
       // Upload image to Cloudinary if provided
       let imageUrl = null;
@@ -123,6 +133,9 @@ router.post(
         userId: req.user._id,
         type,
         petType: petType || 'other',
+        petName: petName || null,
+        contactPhone: type === 'lost' ? contactPhone : null, // Only for lost pets
+        microchipNumber: microchipNumber || null,
         imageUrl,
         description,
         breeds: parsedBreeds,
@@ -134,6 +147,9 @@ router.post(
           address,
         },
         initialTime: initialTime ? new Date(initialTime) : new Date(),
+        // Set status and owner based on type
+        status: type === 'lost' ? 'active' : 'owner_unknown',
+        claimedOwner: type === 'lost' ? req.user._id : null, // Lost pet = reporter is owner
       });
 
       await pet.save();
@@ -153,7 +169,7 @@ router.patch('/:id/status', authMiddleware, async (req, res) => {
   try {
     const { status } = req.body;
 
-    if (!['active', 'found', 'resolved'].includes(status)) {
+    if (!['active', 'pending_found', 'found', 'resolved', 'owner_unknown', 'ownership_pending', 'no_longer_sighted', 'transferred_to_shelter'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
@@ -163,8 +179,11 @@ router.patch('/:id/status', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Pet not found' });
     }
 
-    // Only the creator can update status
-    if (pet.userId.toString() !== req.user._id.toString()) {
+    // Only the reporter or claimed owner can update status
+    const isReporter = pet.userId.toString() === req.user._id.toString();
+    const isOwner = pet.claimedOwner && pet.claimedOwner.toString() === req.user._id.toString();
+    
+    if (!isReporter && !isOwner) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -174,6 +193,246 @@ router.patch('/:id/status', authMiddleware, async (req, res) => {
     res.json(pet);
   } catch (error) {
     console.error('Update pet status error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   POST /api/pets/:id/claim-ownership
+// @desc    Claim ownership of a pet with verification
+// @access  Private
+router.post('/:id/claim-ownership',
+  [authMiddleware, upload.single('verificationPhoto')],
+  async (req, res) => {
+    try {
+      const pet = await Pet.findById(req.params.id);
+
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      if (pet.claimedOwner) {
+        return res.status(400).json({ message: 'Pet already has a claimed owner' });
+      }
+
+      // Can't claim your own report as stray
+      if (pet.userId.toString() === req.user._id.toString()) {
+        return res.status(400).json({ message: 'You are already the reporter' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: 'Verification photo is required' });
+      }
+
+      // Upload photo
+      const photoUrl = await uploadToCloudinary(req.file.buffer, 'sheltr/ownership-claims');
+
+      const { collarColor, hasMicrochip, uniqueMarks, microchipId } = req.body;
+
+      // Add ownership claim
+      pet.ownershipClaims.push({
+        userId: req.user._id,
+        verificationPhoto: photoUrl,
+        verificationAnswers: {
+          collarColor,
+          hasMicrochip: hasMicrochip === 'true',
+          uniqueMarks,
+          microchipId, // Keep private
+        },
+        status: 'pending'
+      });
+
+      pet.status = 'ownership_pending';
+      await pet.save();
+
+      await pet.populate('ownershipClaims.userId', 'username');
+
+      res.json({
+        message: 'Ownership claim submitted. Waiting for reporter verification.',
+        pet
+      });
+    } catch (error) {
+      console.error('Claim ownership error:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  }
+);
+
+// @route   PATCH /api/pets/:id/verify-ownership
+// @desc    Approve or deny ownership claim (reporter only)
+// @access  Private
+router.patch('/:id/verify-ownership', authMiddleware, async (req, res) => {
+  try {
+    const { claimId, approved, denialReason } = req.body;
+    const pet = await Pet.findById(req.params.id);
+
+    if (!pet) {
+      return res.status(404).json({ message: 'Pet not found' });
+    }
+
+    // Only reporter can verify
+    if (pet.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the original reporter can verify ownership' });
+    }
+
+    const claim = pet.ownershipClaims.id(claimId);
+    if (!claim) {
+      return res.status(404).json({ message: 'Claim not found' });
+    }
+
+    if (claim.status !== 'pending') {
+      return res.status(400).json({ message: 'Claim already resolved' });
+    }
+
+    if (approved) {
+      claim.status = 'approved';
+      claim.reviewedBy = req.user._id;
+      claim.reviewedAt = new Date();
+      pet.claimedOwner = claim.userId;
+      pet.status = 'active';
+    } else {
+      claim.status = 'denied';
+      claim.reviewedBy = req.user._id;
+      claim.reviewedAt = new Date();
+      claim.denialReason = denialReason || 'Insufficient verification';
+      pet.status = pet.type === 'stray' ? 'owner_unknown' : 'active';
+    }
+
+    await pet.save();
+    await pet.populate('ownershipClaims.userId ownershipClaims.reviewedBy claimedOwner', 'username');
+
+    res.json({
+      message: approved ? 'Ownership verified' : 'Ownership claim denied',
+      pet
+    });
+  } catch (error) {
+    console.error('Verify ownership error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   POST /api/pets/:id/claim-found
+// @desc    Claim a pet has been found (with photo verification)
+// @access  Private
+router.post('/:id/claim-found', 
+  [authMiddleware, upload.single('photo')],
+  async (req, res) => {
+    try {
+      const pet = await Pet.findById(req.params.id);
+
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      if (pet.status !== 'active') {
+        return res.status(400).json({ message: 'Pet is not active' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: 'Photo is required for verification' });
+      }
+
+      // Upload photo to Cloudinary
+      const photoUrl = await uploadToCloudinary(req.file.buffer, 'sheltr/found-claims');
+
+      // Add found claim
+      pet.foundClaims.push({
+        userId: req.user._id,
+        photoUrl,
+        notes: req.body.notes || '',
+        status: 'pending'
+      });
+
+      pet.status = 'pending_found';
+      await pet.save();
+
+      await pet.populate('foundClaims.userId', 'username');
+
+      res.json({ 
+        message: 'Safety claim submitted. Waiting for verification (48 hours).',
+        pet 
+      });
+    } catch (error) {
+      console.error('Claim found error:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  }
+);
+
+// @route   PATCH /api/pets/:id/confirm-found
+// @desc    Confirm a found claim (by claimed owner only)
+// @access  Private
+router.patch('/:id/confirm-found', authMiddleware, async (req, res) => {
+  try {
+    const { claimId } = req.body;
+    const pet = await Pet.findById(req.params.id);
+
+    if (!pet) {
+      return res.status(404).json({ message: 'Pet not found' });
+    }
+
+    // Only claimed owner can confirm
+    if (!pet.claimedOwner || pet.claimedOwner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the verified owner can confirm reunification' });
+    }
+
+    const claim = pet.foundClaims.id(claimId);
+    if (!claim) {
+      return res.status(404).json({ message: 'Claim not found' });
+    }
+
+    if (claim.status !== 'pending') {
+      return res.status(400).json({ message: 'Claim already resolved' });
+    }
+
+    claim.status = 'confirmed';
+    claim.confirmedBy = req.user._id;
+    claim.confirmedAt = new Date();
+    pet.status = 'found';
+    pet.resolvedAt = new Date();
+
+    await pet.save();
+    await pet.populate('foundClaims.userId foundClaims.confirmedBy', 'username');
+
+    res.json({ message: 'Pet marked as safe', pet });
+  } catch (error) {
+    console.error('Confirm found error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   PATCH /api/pets/:id/dispute-found
+// @desc    Dispute a found claim
+// @access  Private
+router.patch('/:id/dispute-found', authMiddleware, async (req, res) => {
+  try {
+    const { claimId, reason } = req.body;
+    const pet = await Pet.findById(req.params.id);
+
+    if (!pet) {
+      return res.status(404).json({ message: 'Pet not found' });
+    }
+
+    const claim = pet.foundClaims.id(claimId);
+    if (!claim) {
+      return res.status(404).json({ message: 'Claim not found' });
+    }
+
+    if (claim.status !== 'pending') {
+      return res.status(400).json({ message: 'Claim already resolved' });
+    }
+
+    claim.status = 'disputed';
+    claim.confirmedBy = req.user._id;
+    claim.confirmedAt = new Date();
+    claim.notes = (claim.notes || '') + `\n[DISPUTED by ${req.user.username}: ${reason}]`;
+    pet.status = 'active'; // Return to active
+
+    await pet.save();
+    await pet.populate('foundClaims.userId foundClaims.confirmedBy', 'username');
+
+    res.json({ message: 'Claim disputed. Pet marked as active again.', pet });
+  } catch (error) {
+    console.error('Dispute found error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

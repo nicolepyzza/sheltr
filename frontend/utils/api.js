@@ -104,6 +104,72 @@ export const petsAPI = {
     const response = await api.patch(`/api/pets/${id}/status`, { status });
     return response.data;
   },
+
+  claimFound: async (id, claimData) => {
+    const formData = new FormData();
+    
+    if (claimData.photo) {
+      formData.append('photo', {
+        uri: claimData.photo.uri,
+        type: claimData.photo.type || 'image/jpeg',
+        name: claimData.photo.fileName || 'found-photo.jpg',
+      });
+    }
+    
+    if (claimData.notes) {
+      formData.append('notes', claimData.notes);
+    }
+
+    const response = await api.post(`/api/pets/${id}/claim-found`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  confirmFound: async (id, claimId) => {
+    const response = await api.patch(`/api/pets/${id}/confirm-found`, { claimId });
+    return response.data;
+  },
+
+  disputeFound: async (id, claimId, reason) => {
+    const response = await api.patch(`/api/pets/${id}/dispute-found`, { claimId, reason });
+    return response.data;
+  },
+
+  claimOwnership: async (id, claimData) => {
+    const formData = new FormData();
+    
+    if (claimData.photo) {
+      formData.append('verificationPhoto', {
+        uri: claimData.photo.uri,
+        type: claimData.photo.type || 'image/jpeg',
+        name: claimData.photo.fileName || 'verification.jpg',
+      });
+    }
+    
+    formData.append('collarColor', claimData.collarColor || '');
+    formData.append('hasMicrochip', claimData.hasMicrochip);
+    formData.append('uniqueMarks', claimData.uniqueMarks || '');
+    formData.append('microchipId', claimData.microchipId || '');
+
+    const response = await api.post(`/api/pets/${id}/claim-ownership`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  verifyOwnership: async (id, claimId, approved, denialReason = '') => {
+    const response = await api.patch(`/api/pets/${id}/verify-ownership`, {
+      claimId,
+      approved,
+      denialReason
+    });
+    return response.data;
+  },
 };
 
 // Sightings API

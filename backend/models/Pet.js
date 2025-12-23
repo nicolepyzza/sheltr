@@ -4,7 +4,14 @@ const petSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    // This is the REPORTER - the person who first posted about the pet
+  },
+  claimedOwner: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    // This is the VERIFIED OWNER - may be same as reporter or claimed later
   },
   type: {
     type: String,
@@ -15,6 +22,21 @@ const petSchema = new mongoose.Schema({
     type: String,
     enum: ['dog', 'cat', 'other'],
     default: 'other'
+  },
+  petName: {
+    type: String,
+    trim: true,
+    // Required for lost pets, optional for strays
+  },
+  contactPhone: {
+    type: String,
+    trim: true,
+    // Private - only for lost pets (owner contact)
+  },
+  microchipNumber: {
+    type: String,
+    trim: true,
+    // Always private - never shown publicly
   },
   imageUrl: {
     type: String,
@@ -62,8 +84,72 @@ const petSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['active', 'found', 'resolved'],
-    default: 'active'
+    enum: ['active', 'pending_found', 'found', 'resolved', 'owner_unknown', 'ownership_pending', 'no_longer_sighted', 'transferred_to_shelter'],
+    default: 'owner_unknown' // Default for stray reports
+  },
+  ownershipClaims: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    verificationPhoto: {
+      type: String,
+      required: true
+    },
+    verificationAnswers: {
+      collarColor: String,
+      hasMicrochip: Boolean,
+      uniqueMarks: String,
+      microchipId: String, // Never shown publicly
+    },
+    claimedAt: {
+      type: Date,
+      default: Date.now
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'denied'],
+      default: 'pending'
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reviewedAt: Date,
+    denialReason: String
+  }],
+  foundClaims: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    photoUrl: {
+      type: String,
+      required: true
+    },
+    notes: {
+      type: String,
+      maxlength: 500
+    },
+    claimedAt: {
+      type: Date,
+      default: Date.now
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'confirmed', 'disputed'],
+      default: 'pending'
+    },
+    confirmedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    confirmedAt: Date
+  }],
+  resolvedAt: {
+    type: Date
   },
   createdAt: {
     type: Date,
